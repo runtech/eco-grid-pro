@@ -93,48 +93,104 @@ export type Database = {
       }
       orders: {
         Row: {
+          carrier: string | null
           created_at: string
           currency: string
+          delivered_at: string | null
           id: string
           notes: string | null
           order_number: string
+          payment_method: string
+          payment_status: string
+          shipped_at: string | null
           shipping_address: Json
           shipping_fee: number
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
           total: number
+          tracking_number: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          carrier?: string | null
           created_at?: string
           currency?: string
+          delivered_at?: string | null
           id?: string
           notes?: string | null
           order_number?: string
+          payment_method?: string
+          payment_status?: string
+          shipped_at?: string | null
           shipping_address: Json
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
           subtotal: number
           total: number
+          tracking_number?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          carrier?: string | null
           created_at?: string
           currency?: string
+          delivered_at?: string | null
           id?: string
           notes?: string | null
           order_number?: string
+          payment_method?: string
+          payment_status?: string
+          shipped_at?: string | null
           shipping_address?: Json
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           total?: number
+          tracking_number?: string | null
           updated_at?: string
           user_id?: string
         }
         Relationships: []
+      }
+      product_reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          product_id: string
+          rating: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          product_id: string
+          rating: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          product_id?: string
+          rating?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_reviews_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       products: {
         Row: {
@@ -150,11 +206,13 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           is_featured: boolean
+          low_stock_threshold: number
           name_ar: string
           name_en: string
           price: number
           rating: number | null
           review_count: number | null
+          sku: string | null
           slug: string
           specs: Json
           stock: number
@@ -173,11 +231,13 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           is_featured?: boolean
+          low_stock_threshold?: number
           name_ar: string
           name_en: string
           price: number
           rating?: number | null
           review_count?: number | null
+          sku?: string | null
           slug: string
           specs?: Json
           stock?: number
@@ -196,11 +256,13 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           is_featured?: boolean
+          low_stock_threshold?: number
           name_ar?: string
           name_en?: string
           price?: number
           rating?: number | null
           review_count?: number | null
+          sku?: string | null
           slug?: string
           specs?: Json
           stock?: number
@@ -238,6 +300,41 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_movements: {
+        Row: {
+          change: number
+          created_at: string
+          created_by: string | null
+          id: string
+          product_id: string
+          reason: string | null
+        }
+        Insert: {
+          change: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          product_id: string
+          reason?: string | null
+        }
+        Update: {
+          change?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          product_id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -259,12 +356,47 @@ export type Database = {
         }
         Relationships: []
       }
+      wishlists: {
+        Row: {
+          created_at: string
+          id: string
+          product_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          product_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          product_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wishlists_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "technician" | "driver" | "customer"
