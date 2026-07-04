@@ -308,9 +308,7 @@ export type Database = {
           id: string
           note: string | null
           product_id: string
-          reason: string
-          reference_id: string | null
-          reference_type: string | null
+          reason: string | null
         }
         Insert: {
           change: number
@@ -319,9 +317,7 @@ export type Database = {
           id?: string
           note?: string | null
           product_id: string
-          reason: string
-          reference_id?: string | null
-          reference_type?: string | null
+          reason?: string | null
         }
         Update: {
           change?: number
@@ -330,9 +326,7 @@ export type Database = {
           id?: string
           note?: string | null
           product_id?: string
-          reason?: string
-          reference_id?: string | null
-          reference_type?: string | null
+          reason?: string | null
         }
         Relationships: [
           {
@@ -399,13 +393,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
+      [_ in never]: never
     }
     Enums: {
       app_role: "admin" | "technician" | "driver" | "customer"
