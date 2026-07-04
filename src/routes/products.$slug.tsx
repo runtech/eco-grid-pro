@@ -7,9 +7,35 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ProductReviews } from "@/components/ProductReviews";
+import { WishlistButton } from "@/components/WishlistButton";
 
 export const Route = createFileRoute("/products/$slug")({
   component: ProductDetail,
+  loader: async ({ params }) => {
+    const { data } = await supabase
+      .from("products")
+      .select("name_ar,name_en,description_ar,description_en,image_url,price,currency")
+      .eq("slug", params.slug)
+      .eq("is_active", true)
+      .maybeSingle();
+    return { seed: data };
+  },
+  head: ({ params, loaderData }) => {
+    const p = loaderData?.seed;
+    const title = p ? `${p.name_ar} — SolarHub` : `منتج — SolarHub`;
+    const desc = p ? (p.description_ar ?? p.description_en ?? `${p.name_ar} — ${p.price} ${p.currency}`).slice(0, 155) : "تفاصيل المنتج";
+    const meta: Array<Record<string, string>> = [
+      { title },
+      { name: "description", content: desc },
+      { property: "og:title", content: p ? p.name_en : "SolarHub Product" },
+      { property: "og:description", content: desc },
+      { property: "og:type", content: "product" },
+      { property: "og:url", content: `/products/${params.slug}` },
+    ];
+    if (p?.image_url) meta.push({ property: "og:image", content: p.image_url }, { property: "twitter:image", content: p.image_url });
+    return { meta, links: [{ rel: "canonical", href: `/products/${params.slug}` }] };
+  },
 });
 
 function ProductDetail() {
@@ -103,15 +129,18 @@ function ProductDetail() {
 
           {desc && <p className="text-muted-foreground leading-relaxed">{desc}</p>}
 
-          <Button
-            size="lg"
-            onClick={() => addToCart.mutate()}
-            disabled={addToCart.isPending || product.stock <= 0}
-            className="w-full gradient-primary border-0"
-          >
-            <ShoppingCart className="h-5 w-5" />
-            <span className="ms-2">{t("products.addToCart")}</span>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="lg"
+              onClick={() => addToCart.mutate()}
+              disabled={addToCart.isPending || product.stock <= 0}
+              className="flex-1 gradient-primary border-0"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              <span className="ms-2">{t("products.addToCart")}</span>
+            </Button>
+            <WishlistButton productId={product.id} className="h-11 w-11 border" />
+          </div>
 
           {Object.keys(specs).length > 0 && (
             <div className="mt-4 rounded-xl border bg-card p-4">
@@ -130,6 +159,7 @@ function ProductDetail() {
           )}
         </div>
       </div>
+      <ProductReviews productId={product.id} />
     </div>
   );
 }
