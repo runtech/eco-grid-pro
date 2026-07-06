@@ -303,3 +303,96 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// ============ Store recommendations ============
+type Product = Tables<"products">;
+
+function parseVolts(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return parseFloat(v.replace(/[^\d.]/g, "")) || 0;
+  return 0;
+}
+
+function Recommendations({
+  locale, targetPanelW, panelsCount, inverterKw, batteryV, batteryAh, batteriesCount,
+}: {
+  locale: L; targetPanelW: number; panelsCount: number; inverterKw: number;
+  batteryV: number; batteryAh: number; batteriesCount: number;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["calc-recommendations"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .in("category", ["solar_panels", "inverters", "batteries"])
+        .eq("is_active", true);
+      if (error) throw error;
+      return data as Product[];
+    },
+    staleTime: 60_000,
+  });
+
+  const picks = useMemo(() => {
+    const all = data ?? [];
+    const rank = <T,>(items: T[], score: (x: T) => number, n = 3) =>
+      [...items].sort((a, b) => score(a) - score(b)).slice(0, n);
+
+    const panels = rank(
+      all.filter((p) => p.category === "solar_panels"),
+      (p) => Math.abs(((p.specs as any)?.power_w ?? 0) - targetPanelW),
+    );
+    const inverters = rank(
+      all.filter((p) => p.category === "inverters"),
+      (p) => {
+        const kw = (p.specs as any)?.power_kw ?? 0;
+        return kw < inverterKw ? 1000 + (inverterKw - kw) : kw - inverterKw;
+      },
+    );
+    const batteries = rank(
+      all.filter((p) => p.category === "batteries"),
+      (p) => {
+        const s: any = p.specs ?? {};
+        const v = parseVolts(s.voltage);
+        const ah = s.capacity_ah ?? 0;
+        return Math.abs(v - batteryV) * 10 + Math.abs(ah - batteryAh) * 0.1;
+      },
+    );
+    return { panels, inverters, batteries };
+  }, [data, targetPanelW, inverterKw, batteryV, batteryAh]);
+
+  if (isLoading) {
+    return <p className="text-center text-sm text-muted-foreground">{tr(locale, "جاري تحميل المنتجات المقترحة…", "Loading suggestions…")}</p>;
+  }
+  if (!data || data.length === 0) return null;
+
+  const sections: Array<{ key: keyof typeof picks; title: string; hint: string }> = [
+    { key: "panels", title: tr(locale, "الألواح الشمسية المقترحة", "Suggested solar panels"), hint: `${panelsCount} × ~${targetPanelW}W` },
+    { key: "inverters", title: tr(locale, "الإنفرترات المقترحة", "Suggested inverters"), hint: `≥ ${inverterKw} kW` },
+    { key: "batteries", title: tr(locale, "البطاريات المقترحة", "Suggested batteries"), hint: `${batteriesCount} × ${batteryV}V ${batteryAh}Ah` },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2">
+        <ShoppingBag className="h-5 w-5 text-primary" />
+        <h3 className="text-lg font-semibold">{tr(locale, "منتجات من المتجر تناسب تصميمك", "Store products matching your design")}</h3>
+      </div>
+      {sections.map((sec) => (
+        <div key={sec.key}>
+          <div className="mb-3 flex items-baseline justify-between">
+            <h4 className="font-medium">{sec.title}</h4>
+            <span className="text-xs text-muted-foreground">{tr(locale, "الاحتياج:", "Target:")} {sec.hint}</span>
+          </div>
+          {picks[sec.key].length === 0 ? (
+            <p className="text-sm text-muted-foreground">{tr(locale, "لا توجد منتجات متاحة حالياً.", "No products available yet.")}</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              {picks[sec.key].map((p) => <ProductCard key={p.id} product={p} />)}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
