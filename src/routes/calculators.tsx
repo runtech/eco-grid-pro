@@ -313,12 +313,22 @@ function parseVolts(v: unknown): number {
   return 0;
 }
 
+const CHEMISTRIES = ["any", "LiFePO4", "AGM", "Gel", "Lead-acid"] as const;
+type Chemistry = (typeof CHEMISTRIES)[number];
+
 function Recommendations({
   locale, targetPanelW, panelsCount, inverterKw, batteryV, batteryAh, batteriesCount,
 }: {
   locale: L; targetPanelW: number; panelsCount: number; inverterKw: number;
   batteryV: number; batteryAh: number; batteriesCount: number;
 }) {
+  const [budgetTotal, setBudgetTotal] = useState(0); // 0 = no cap
+  const [areaM2, setAreaM2] = useState(0); // 0 = ignore
+  const [minEfficiency, setMinEfficiency] = useState(0);
+  const [chemistry, setChemistry] = useState<Chemistry>("any");
+  const [preferBrand, setPreferBrand] = useState("");
+  const [inverterMargin, setInverterMargin] = useState(20); // % headroom
+
   const { data, isLoading } = useQuery({
     queryKey: ["calc-recommendations"],
     queryFn: async () => {
@@ -335,41 +345,61 @@ function Recommendations({
 
   const picks = useMemo(() => {
     const all = data ?? [];
+    const brand = preferBrand.trim().toLowerCase();
+    const brandBonus = (p: Product) => (brand && p.brand?.toLowerCase().includes(brand) ? -50 : 0);
+
+    // Effective inverter target with margin
+    const invTarget = inverterKw * (1 + inverterMargin / 100);
+
     const rank = <T,>(items: T[], score: (x: T) => number, n = 3) =>
       [...items].sort((a, b) => score(a) - score(b)).slice(0, n);
 
-    const panels = rank(
-      all.filter((p) => p.category === "solar_panels"),
-      (p) => Math.abs(((p.specs as any)?.power_w ?? 0) - targetPanelW),
-    );
-    const inverters = rank(
-      all.filter((p) => p.category === "inverters"),
-      (p) => {
-        const kw = (p.specs as any)?.power_kw ?? 0;
-        return kw < inverterKw ? 1000 + (inverterKw - kw) : kw - inverterKw;
-      },
-    );
-    const batteries = rank(
-      all.filter((p) => p.category === "batteries"),
-      (p) => {
-        const s: any = p.specs ?? {};
-        const v = parseVolts(s.voltage);
-        const ah = s.capacity_ah ?? 0;
-        return Math.abs(v - batteryV) * 10 + Math.abs(ah - batteryAh) * 0.1;
-      },
-    );
-    return { panels, inverters, batteries };
-  }, [data, targetPanelW, inverterKw, batteryV, batteryAh]);
+    // ------ Panels ------
+    let panelPool = all.filter((p) => p.category === "solar_panels");
+    panelPool = panelPool.filter((p) => {
+      const s: any = p.specs ?? {};
+      const eff = parseFloat(String(s.efficiency ?? "0").replace(/[^\d.]/g, "")) || 0;
+      if (minEfficiency > 0 && eff < minEfficiency) return false;
+      if (areaM2 > 0) {
+        // approx panel area ~ 2 m² for 550W; scale with W
+        const areaPer = 2 * (((s.power_w ?? targetPanelW) || 1) / 550);
+        const need = areaPer * panelsCount;
+        if (need > areaM2 * 1.05) return false;
+      }
+      return true;
+    });
+    if (budgetTotal > 0) panelPool = panelPool.filter((p) => Number(p.price) * panelsCount <= budgetTotal);
+    const panels = rank(panelPool, (p) => Math.abs(((p.specs as any)?.power_w ?? 0) - targetPanelW) + brandBonus(p));
 
-  if (isLoading) {
-    return <p className="text-center text-sm text-muted-foreground">{tr(locale, "جاري تحميل المنتجات المقترحة…", "Loading suggestions…")}</p>;
-  }
-  if (!data || data.length === 0) return null;
+    // ------ Inverters ------
+    let invPool = all.filter((p) => p.category === "inverters");
+    if (budgetTotal > 0) invPool = invPool.filter((p) => Number(p.price) <= budgetTotal);
+    const inverters = rank(invPool, (p) => {
+      const kw = (p.specs as any)?.power_kw ?? 0;
+      const base = kw < invTarget ? 1000 + (invTarget - kw) : kw - invTarget;
+      return base + brandBonus(p);
+    });
+
+    // ------ Batteries ------
+    let battPool = all.filter((p) => p.category === "batteries");
+    if (chemistry !== "any") {
+      battPool = battPool.filter((p) => String((p.specs as any)?.chemistry ?? "").toLowerCase().includes(chemistry.toLowerCase()));
+    }
+    if (budgetTotal > 0) battPool = battPool.filter((p) => Number(p.price) * batteriesCount <= budgetTotal);
+    const batteries = rank(battPool, (p) => {
+      const s: any = p.specs ?? {};
+      const v = parseVolts(s.voltage);
+      const ah = s.capacity_ah ?? 0;
+      return Math.abs(v - batteryV) * 10 + Math.abs(ah - batteryAh) * 0.1 + brandBonus(p);
+    });
+
+    return { panels, inverters, batteries };
+  }, [data, targetPanelW, inverterKw, batteryV, batteryAh, panelsCount, batteriesCount, budgetTotal, areaM2, minEfficiency, chemistry, preferBrand, inverterMargin]);
 
   const sections: Array<{ key: keyof typeof picks; title: string; hint: string }> = [
     { key: "panels", title: tr(locale, "الألواح الشمسية المقترحة", "Suggested solar panels"), hint: `${panelsCount} × ~${targetPanelW}W` },
-    { key: "inverters", title: tr(locale, "الإنفرترات المقترحة", "Suggested inverters"), hint: `≥ ${inverterKw} kW` },
-    { key: "batteries", title: tr(locale, "البطاريات المقترحة", "Suggested batteries"), hint: `${batteriesCount} × ${batteryV}V ${batteryAh}Ah` },
+    { key: "inverters", title: tr(locale, "الإنفرترات المقترحة", "Suggested inverters"), hint: `≥ ${(inverterKw * (1 + inverterMargin / 100)).toFixed(1)} kW` },
+    { key: "batteries", title: tr(locale, "البطاريات المقترحة", "Suggested batteries"), hint: `${batteriesCount} × ${batteryV}V ${batteryAh}Ah${chemistry !== "any" ? ` · ${chemistry}` : ""}` },
   ];
 
   return (
@@ -378,21 +408,65 @@ function Recommendations({
         <ShoppingBag className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold">{tr(locale, "منتجات من المتجر تناسب تصميمك", "Store products matching your design")}</h3>
       </div>
-      {sections.map((sec) => (
-        <div key={sec.key}>
-          <div className="mb-3 flex items-baseline justify-between">
-            <h4 className="font-medium">{sec.title}</h4>
-            <span className="text-xs text-muted-foreground">{tr(locale, "الاحتياج:", "Target:")} {sec.hint}</span>
-          </div>
-          {picks[sec.key].length === 0 ? (
-            <p className="text-sm text-muted-foreground">{tr(locale, "لا توجد منتجات متاحة حالياً.", "No products available yet.")}</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              {picks[sec.key].map((p) => <ProductCard key={p.id} product={p} />)}
-            </div>
-          )}
+
+      {/* Match settings */}
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold">{tr(locale, "قواعد المطابقة", "Matching rules")}</h4>
+          <Button
+            variant="ghost" size="sm"
+            onClick={() => { setBudgetTotal(0); setAreaM2(0); setMinEfficiency(0); setChemistry("any"); setPreferBrand(""); setInverterMargin(20); }}
+          >
+            {tr(locale, "إعادة الضبط", "Reset")}
+          </Button>
         </div>
-      ))}
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label={tr(locale, "سقف الميزانية لكل صنف (0 = بدون)", "Budget cap per category (0 = none)")} value={budgetTotal} onChange={setBudgetTotal} step={10000} />
+          <Field label={tr(locale, "المساحة المتاحة للألواح (م²، 0 = تجاهل)", "Available panel area (m², 0 = ignore)")} value={areaM2} onChange={setAreaM2} />
+          <Field label={tr(locale, "أدنى كفاءة للوح %", "Minimum panel efficiency %")} value={minEfficiency} onChange={setMinEfficiency} />
+          <Field label={tr(locale, "هامش أمان الإنفرتر %", "Inverter safety margin %")} value={inverterMargin} onChange={setInverterMargin} />
+          <div className="space-y-1.5">
+            <Label>{tr(locale, "نوع البطاريات", "Battery chemistry")}</Label>
+            <select
+              value={chemistry}
+              onChange={(e) => setChemistry(e.target.value as Chemistry)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {CHEMISTRIES.map((c) => (
+                <option key={c} value={c}>
+                  {c === "any" ? tr(locale, "الكل", "Any") : c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{tr(locale, "علامة تجارية مفضّلة", "Preferred brand")}</Label>
+            <Input value={preferBrand} onChange={(e) => setPreferBrand(e.target.value)} placeholder={tr(locale, "اختياري", "optional")} maxLength={60} />
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-center text-sm text-muted-foreground">{tr(locale, "جاري تحميل المنتجات المقترحة…", "Loading suggestions…")}</p>
+      ) : !data || data.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground">{tr(locale, "لا توجد منتجات في المتجر بعد.", "No store products yet.")}</p>
+      ) : (
+        sections.map((sec) => (
+          <div key={sec.key}>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h4 className="font-medium">{sec.title}</h4>
+              <span className="text-xs text-muted-foreground">{tr(locale, "الاحتياج:", "Target:")} {sec.hint}</span>
+            </div>
+            {picks[sec.key].length === 0 ? (
+              <p className="text-sm text-muted-foreground">{tr(locale, "لا توجد منتجات مطابقة للقواعد المحدّدة.", "No products match the current rules.")}</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                {picks[sec.key].map((p) => <ProductCard key={p.id} product={p} />)}
+              </div>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 }
