@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Calculator, Zap, Sun, TrendingUp, Timer, Plus, Trash2 } from "lucide-react";
+import { Calculator, Zap, Sun, TrendingUp, Timer, Plus, Trash2, ShoppingBag } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useI18n, formatPrice } from "@/lib/i18n";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ProductCard } from "@/components/ProductCard";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/calculators")({
   component: CalculatorsPage,
