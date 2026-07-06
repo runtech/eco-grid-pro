@@ -174,6 +174,17 @@ function SystemDesigner({ locale }: { locale: L }) {
           <Result label={tr(locale, "منظم الشحن", "Charge controller")} value={`${r.controllerA} A`} />
         </div>
       </CardContent>
+      <CardContent className="border-t pt-6">
+        <Recommendations
+          locale={locale}
+          targetPanelW={panelW}
+          panelsCount={r.panels}
+          inverterKw={r.inverterKw}
+          batteryV={batteryV}
+          batteryAh={batteryAh}
+          batteriesCount={r.batteries}
+        />
+      </CardContent>
     </Card>
   );
 }
